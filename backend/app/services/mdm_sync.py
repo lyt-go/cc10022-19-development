@@ -103,3 +103,68 @@ class MdmSyncService(BaseModuleService):
             row for row in rows
             if row.get("黄金实体") == entity_model and row.get("status") in ("待校验", "同步中")
         ]
+
+    # ── 目标分发对账：批次快照、分片导出、实收核对 ──
+
+    def update_sync_scope(self, sync_id: int, values: dict[str, Any]) -> dict[str, Any]:
+        """更正同步配置的可编辑口径（字段范围/同步方式/目标系统等）。
+
+        只改配置本身，不会静默改写已发出的批次；下一次生成对账批次时
+        如果口径已变，旧批次会被作废并生成新的批次编号。
+        """
+        sync_cfg = self.get_entry(sync_id)
+        if sync_cfg is None:
+            return {"ok": False, "reason": f"同步配置 {sync_id} 不存在或已归档"}
+        editable = {"字段范围", "同步方式", "变化检测", "冲突策略", "目标系统", "黄金实体"}
+        applied: dict[str, Any] = {}
+        for field, value in (values or {}).items():
+            if field in editable and value is not None:
+                sync_cfg[field] = str(value)
+                applied[field] = sync_cfg[field]
+        if not applied:
+            return {"ok": False, "reason": "没有可更正的字段（仅支持字段范围/同步方式/目标系统等口径字段）"}
+        return {
+            "ok": True,
+            "message": f"同步配置 {sync_cfg.get('配置编号')} 已更正："
+                       + "、".join(f"{k}={v}" for k, v in applied.items()),
+            "entry": sync_cfg,
+            "applied": applied,
+        }
+
+    def _recon(self):
+        from app.services.distribution_reconciliation import distribution_reconciliation
+        return distribution_reconciliation
+
+    def build_distribution_batch(self, sync_id: int, shard_size: int | None = None) -> dict[str, Any]:
+        """按同步配置的字段范围生成分发对账批次；口径不变的重发沿用原批次编号。"""
+        return self._recon().build_batch(sync_id, shard_size=shard_size)
+
+    def list_distribution_batches(self, sync_id: int | None = None) -> list[dict[str, Any]]:
+        """列出发放过的对账批次，用于确认当前可签收的批次编号。"""
+        return self._recon().list_batches(sync_id)
+
+    def get_distribution_batch(self, batch_no: str) -> dict[str, Any] | None:
+        """查看单个对账批次的列定义、分片范围、合计和已登记实收。"""
+        return self._recon().get_batch(batch_no)
+
+    def verify_distribution_batch(self, batch_no: str) -> dict[str, Any]:
+        """复核批次分片范围、合计与列定义是否自洽。"""
+        return self._recon().verify_batch(batch_no)
+
+    def export_distribution_file(self, batch_no: str, shard_no: int | None = None) -> dict[str, Any]:
+        """导出对账文件内容，文件头带批次号和列定义指纹，供客服核对实收。"""
+        return self._recon().export_csv(batch_no, shard_no=shard_no)
+
+    def acknowledge_distribution_receipts(self, receipts: list[dict[str, Any]],
+                                          default_batch_no: str | None = None) -> dict[str, Any]:
+        """登记实收片段并立即核对：返回应收分片、缺失片与可确认批次编号。"""
+        return self._recon().acknowledge(receipts, default_batch_no=default_batch_no)
+
+    def reconcile_distribution(self, receipts: list[dict[str, Any]] | None = None,
+                               default_batch_no: str | None = None) -> dict[str, Any]:
+        """核对实收数据：清点应收分片、实收行与本次可确认的批次编号。"""
+        return self._recon().reconcile(receipts, persist=False, default_batch_no=default_batch_no)
+
+    def check_distribution_signoff(self, sync_id: int) -> dict[str, Any]:
+        """续发后整体核对某同步配置的实收，判断前后片能否一起签收。"""
+        return self._recon().check_sync(sync_id)

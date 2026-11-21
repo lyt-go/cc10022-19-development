@@ -70,3 +70,29 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .analysis-chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding: 12px 0; }
 .analysis-bar { flex: 1; border-radius: 4px 4px 0 0; background: var(--brand); min-width: 24px; position: relative; transition: height 0.4s; }
 .analysis-bar span { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--muted); white-space: nowrap; }
+/* 目标分发对账 */
+.recon-panel { margin-top: 20px; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+.recon-head h3 { margin: 0 0 4px; font-size: 15px; }
+.recon-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 12px 0; }
+.recon-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.recon-form input, .recon-form select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+.recon-form input[type='number'] { width: 110px; }
+.recon-message { font-size: 12px; color: var(--muted); }
+.recon-batches { display: flex; flex-direction: column; gap: 12px; }
+.recon-batch { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: #fcfdff; }
+.recon-batch.superseded { background: #fef6f6; border-color: #f3c4c0; }
+.recon-batch-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 6px; }
+.recon-batch-head .muted { color: var(--muted); font-size: 12px; }
+.recon-note { font-size: 12px; color: #b42318; margin: 4px 0; }
+.recon-shards { margin-top: 8px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #eef2f7; color: #344054; }
+.badge.outcome-同批可签收, .badge.outcome-待接收 { background: #e7f7ee; color: #15803d; }
+.badge.outcome-缺片待补, .badge.outcome-缺行待补 { background: #fff4e5; color: #b45309; }
+.badge.outcome-跨批不可合并签收, .badge.outcome-批次已作废, .badge.outcome-实收明细不符,
+.badge.outcome-批次不存在 { background: #fde8e8; color: #b42318; }
+.recon-result { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 12px; }
+.recon-result-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 13px; }
+.recon-result p { font-size: 13px; margin: 6px 0; }
+.recon-batch-table { margin-top: 8px; }
+.recon-scope { flex: 1 1 360px; }
+.recon-scope input { width: 100%; }

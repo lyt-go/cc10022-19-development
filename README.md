@@ -77,5 +77,36 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 目标分发对账
+
+`mdm_sync`（主数据分发同步）额外提供分发对账能力，核心实现见
+`backend/app/services/distribution_reconciliation.py`，前端在同步模块页面的
+「目标分发对账」面板操作。
+
+- **生成批次**（`POST /api/mdm_sync/distribution-batches?sync_id=`）：
+  按同步配置的`字段范围`从黄金记录导出完整数据，冻结为一份批次快照（列定义、
+  列定义指纹、数据快照、分片范围、合计）。`黄金ID`始终作为首列。
+- **同批标识**：批次编号形如 `DIST-<配置编号>-<序号>`。字段范围和数据都没变时
+  重发沿用原批次编号；任一口径变化则生成新批次，并把旧批次标记为`已作废`
+  且记录`替代批次`，防止两套口径被当成同一批签收。
+- **分片导出**（`GET .../distribution-batches/{批次编号}/export?shard_no=`）：
+  CSV 文件头带批次编号、列定义、列定义指纹、分片范围（起止行/片数/行数）与
+  批次合计，每行带分片定位列，客服可据此比对实收行和缺失片。
+- **实收登记与核对**（`POST .../distribution-batches/{批次编号}/receipts`）：
+  按`批次编号 + 分片序号`登记实收，可带`golden_ids`逐行明细；返回应收分片、
+  实收分片、缺失分片、缺失/多出/重复黄金ID 与本次可确认的批次编号。
+- **整体核对**（`POST /api/mdm_sync/{entry_id}/distribution-reconcile`）：
+  续发后按同步配置整体判断前后片能否一起签收。
+- **批次自检**（`GET .../distribution-batches/{批次编号}/verify`）：复核列定义
+  指纹、数据指纹、分片范围连续性与行数合计。
+- **口径更正**（`PATCH /api/mdm_sync/{entry_id}/distribution-scope`）：只改同步
+  配置本身，不会静默改写已发批次；下一次生成时按新口径换批。
+
+核对结论取值：`同批可签收`、`缺片待补`、`缺行待补`、`实收明细不符`、
+`跨批不可合并签收`、`批次已作废`、`批次不存在`。只有`同批可签收`返回
+`ok=true` 且 `确认批次编号` 为唯一批次号；跨批次片段一律不合并签收。
+
+测试：`backend/.venv/bin/python -m app.tests.test_distribution_reconciliation`。
+
 领域：数据工程
 子方向：数仓与数据湖

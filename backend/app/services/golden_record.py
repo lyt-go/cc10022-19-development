@@ -7,6 +7,9 @@ from typing import Any
 from app.services.base import BaseModuleService
 from app.store import store
 
+# 运行期内部标记，不属于黄金记录业务字段，导出分发数据时必须剔掉。
+GOLDEN_INTERNAL_KEYS = frozenset({"id", "status", "pending", "abnormal", "source_count"})
+
 
 class GoldenRecordService(BaseModuleService):
     MODULE = "golden_record"
@@ -26,7 +29,7 @@ class GoldenRecordService(BaseModuleService):
         设置置信度、关联来源和最后合并时间，生成唯一黄金ID。
         """
         rows = store.rows(self.MODULE)
-        golden_id = f"GR-{entity_model}-{datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        golden_id = self._next_golden_id(entity_model)
         confidence = self._compute_confidence(len(source_ids))
         entry = {
             "id": max((int(r.get("id", 0)) for r in rows), default=0) + 1,
@@ -49,6 +52,22 @@ class GoldenRecordService(BaseModuleService):
         rows.append(entry)
         # 写入黄金记录到golden_records存储，关联来源批次与合并追溯信息
         return {"ok": True, "golden_record": entry}
+
+    def _next_golden_id(self, entity_model: str) -> str:
+        """生成唯一黄金ID：同一秒内创建多条记录也不能撞号，否则对账无法按行定位。"""
+        rows = store.rows(self.MODULE)
+        existing = {str(row.get("黄金ID", "")) for row in rows}
+        prefix = f"GR-{entity_model}-"
+        serial = max(
+            (int(str(rid)[len(prefix):]) for rid in existing
+             if str(rid).startswith(prefix) and str(rid)[len(prefix):].isdigit()),
+            default=0,
+        )
+        while True:
+            serial += 1
+            candidate = f"{prefix}{serial:06d}"
+            if candidate not in existing:
+                return candidate
 
     def _compute_confidence(self, source_count: int) -> float:
         """计算黄金记录置信度：基于来源数量和质量指标综合评估。"""
@@ -145,5 +164,31 @@ class GoldenRecordService(BaseModuleService):
                 "confidence": float(r.get("置信度", "0")),
                 "sources": (r.get("关联来源", "")).split("|"),
                 "key_fields": (r.get("关键字段", "")).split(","),
+                # 对账文件要按实际字段取数，完整字段值随导出一起下发
+                "fields": self._business_fields(r),
             })
         return exported
+
+    def export_full_golden_records(self, entity_model: str | None = None,
+                                   only_active: bool = True) -> list[dict[str, Any]]:
+        """导出黄金记录完整数据：保留除内部运行标记外的全部字段值。
+
+        分发对账文件需要按黄金ID逐行核对，因此这里不裁剪字段，
+        只去掉 id/status/pending 等内部标记，并按黄金ID稳定排序，
+        保证同一批快照每次生成的分片范围和摘要都不变。
+        """
+        rows = store.rows(self.MODULE)
+        if entity_model:
+            rows = [row for row in rows if row.get("实体模型") == entity_model]
+        if only_active:
+            rows = [row for row in rows if row.get("status") == "已生效"]
+        ordered = sorted(rows, key=lambda row: str(row.get("黄金ID", "")))
+        return [self._business_fields(row) for row in ordered]
+
+    @staticmethod
+    def _business_fields(row: dict[str, Any]) -> dict[str, Any]:
+        """取出记录的完整业务字段，滤掉内部运行标记。"""
+        return {
+            key: value for key, value in row.items()
+            if key not in GOLDEN_INTERNAL_KEYS
+        }
